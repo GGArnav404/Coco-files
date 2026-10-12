@@ -27,6 +27,14 @@ function saveConfig() {
 
 function loadConfig() {
   try {
+    // 1. local personal file (gitignored, never committed) takes precedence if present
+    const g = window.GITHUB_CONFIG || {};
+    if (g.token) $("token").value = g.token;
+    if (g.owner) $("owner").value = g.owner;
+    if (g.repo) $("repo").value = g.repo;
+    if (g.branch) $("branch").value = g.branch;
+    if (g.folder) $("folder").value = g.folder;
+    if (g.token) return;
     const c = JSON.parse(localStorage.getItem("gh-uploader") || "{}");
     if (c.token) $("token").value = c.token;
     if (c.owner) $("owner").value = c.owner;
