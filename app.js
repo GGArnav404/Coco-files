@@ -198,24 +198,7 @@ async function uploadFiles(fileList) {
 
 async function downloadFile(f) {
   setStatus(`Downloading ${f.name}…`);
-  try {
-    // Use the API (CORS-enabled) with raw accept instead of download_url (raw host + auth triggers CORS preflight failures).
-    const { token, owner, repo, branch } = getConfig();
-    const encPath = f.path.split("/").map(encodeURIComponent).join("/");
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encPath}?ref=${encodeURIComponent(branch)}`;
-    let res = await fetch(apiUrl, {
-      headers: {
-        Accept: "application/vnd.github.raw",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
-    if (!res.ok) {
-      // Fallback: public repos can use download_url without auth (no preflight).
-      res = await fetch(f.download_url);
-      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-    }
-    const blob = await res.blob();
+  const saveBlob = (blob) => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = f.name;
@@ -223,9 +206,37 @@ async function downloadFile(f) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  try {
+    // Use the API (CORS-enabled) with raw accept instead of download_url (raw host + auth triggers CORS preflight failures).
+    const { token, owner, repo, branch } = getConfig();
+    const encPath = f.path.split("/").map(encodeURIComponent).join("/");
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encPath}?ref=${encodeURIComponent(branch)}`;
+    const res = await fetch(apiUrl, {
+      headers: {
+        Accept: "application/vnd.github.raw",
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    saveBlob(await res.blob());
     setStatus(`${f.name} downloaded.`, true);
   } catch (e) {
-    setStatus(e.message, false);
+    // Fallback for public repos / blocked fetch: direct navigation to download_url has no CORS preflight.
+    try {
+      const a = document.createElement("a");
+      a.href = f.download_url;
+      a.download = f.name;
+      a.target = "_blank";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setStatus(`${f.name} opened via direct link (API download failed: ${e.message}). Check new tab / downloads.`, true);
+    } catch (e2) {
+      setStatus(`Download failed: ${e.message} / ${e2.message}`, false);
+    }
   }
 }
 
