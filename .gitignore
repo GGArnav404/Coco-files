@@ -1,0 +1,3 @@
+# never commit real tokens
+.env
+config.local.js
