@@ -199,12 +199,22 @@ async function uploadFiles(fileList) {
 async function downloadFile(f) {
   setStatus(`Downloading ${f.name}…`);
   try {
-    // download_url is public for public repos but needs auth for private — fetch with token
-    const { token } = getConfig();
-    const res = await fetch(f.download_url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    // Use the API (CORS-enabled) with raw accept instead of download_url (raw host + auth triggers CORS preflight failures).
+    const { token, owner, repo, branch } = getConfig();
+    const encPath = f.path.split("/").map(encodeURIComponent).join("/");
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encPath}?ref=${encodeURIComponent(branch)}`;
+    let res = await fetch(apiUrl, {
+      headers: {
+        Accept: "application/vnd.github.raw",
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
     });
-    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    if (!res.ok) {
+      // Fallback: public repos can use download_url without auth (no preflight).
+      res = await fetch(f.download_url);
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    }
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
