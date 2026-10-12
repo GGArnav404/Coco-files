@@ -154,28 +154,38 @@ async function uploadFiles(fileList) {
     try {
       if (file.size > 90 * 1024 * 1024) throw new Error("File too large for Contents API (>90MB). Use Git LFS instead.");
       const content = await toBase64(file);
+      const enc = (s) => s.split("/").map(encodeURIComponent).join("/");
       const path = folder ? `${folder}/${file.name}` : file.name;
+      const apiPath = `/repos/${owner}/${repo}/contents/${enc(path)}`;
 
       // Check if file exists to include sha (required for update)
       let sha;
       try {
-        const existing = await api(
-          `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`,
-          token
-        );
-        sha = existing.sha;
+        const existing = await api(`${apiPath}?ref=${encodeURIComponent(branch)}`, token);
+        if (existing && !Array.isArray(existing)) sha = existing.sha;
       } catch {}
 
-      await api(`/repos/${owner}/${repo}/contents/${path}`, token, {
+      const put = (s) => api(apiPath, token, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: `Upload ${file.name} via file uploader`,
           content,
           branch,
-          ...(sha ? { sha } : {}),
+          ...(s ? { sha: s } : {}),
         }),
       });
+
+      try {
+        await put(sha);
+      } catch (e) {
+        // 422 "sha wasn't supplied" = file appeared between check and PUT (or GET missed it). Refetch sha and retry once.
+        if (String(e.message).includes("422") && String(e.message).includes("sha")) {
+          const existing = await api(`${apiPath}?ref=${encodeURIComponent(branch)}`, token);
+          if (!existing || Array.isArray(existing) || !existing.sha) throw e;
+          await put(existing.sha);
+        } else throw e;
+      }
       li.querySelector(".size").textContent = "Uploaded ✓";
       setStatus(`${file.name} pushed to ${path}.`, true);
     } catch (e) {
